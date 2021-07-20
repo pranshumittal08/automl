@@ -22,7 +22,7 @@ MIN_CLASS_SCORE = -5.0
 _DUMMY_DETECTION_SCORE = -1e5
 
 # The maximum number of (anchor,class) pairs to keep for non-max suppression.
-MAX_DETECTION_POINTS = 5000
+MAX_DETECTION_POINTS = 2000
 
 
 def diou_nms(dets, iou_thresh=None):

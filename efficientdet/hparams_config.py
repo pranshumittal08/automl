@@ -20,7 +20,7 @@ from typing import Any, Dict, Text
 import six
 import tensorflow as tf
 import yaml
-
+import pathlib
 
 def eval_str_fn(val):
   if val in {'true', 'false'}:
@@ -172,31 +172,31 @@ def default_detection_configs():
   h = Config()
 
   # model name.
-  h.name = 'efficientdet-d1'
+  h.name = 'efficientdetv2-s'
 
   # activation type: see activation_fn in utils.py.
   h.act_type = 'swish'
 
   # input preprocessing parameters
-  h.image_size = 640  # An integer or a string WxH such as 640x320.
+  h.image_size = 512  # An integer or a string WxH such as 640x320.
   h.target_size = None
-  h.input_rand_hflip = True
+  h.input_rand_hflip = False
   h.jitter_min = 0.1
-  h.jitter_max = 2.0
+  h.jitter_max = 0.1
   h.autoaugment_policy = None
   h.grid_mask = False
   h.sample_image = None
-  h.map_freq = 5  # AP eval frequency in epochs.
+  h.map_freq = 1  # AP eval frequency in epochs.
 
   # dataset specific parameters
   # TODO(tanmingxing): update this to be 91 for COCO, and 21 for pascal.
-  h.num_classes = 90  # 1+ actual classes, 0 is reserved for background.
-  h.seg_num_classes = 3  # segmentation classes
+  h.num_classes = 2  # 1+ actual classes, 0 is reserved for background.
+  h.seg_num_classes = 0  # segmentation classes
   h.heads = ['object_detection']  # 'object_detection', 'segmentation'
 
   h.skip_crowd_during_training = True
   h.label_map = None  # a dict or a string of 'coco', 'voc', 'waymo'.
-  h.max_instances_per_image = 100  # Default to 100 for COCO.
+  h.max_instances_per_image = 20  # Default to 100 for COCO.
   h.regenerate_source_id = False
 
   # model architecture
@@ -210,15 +210,16 @@ def default_detection_configs():
   h.is_training_bn = True
   # optimization
   h.momentum = 0.9
-  h.optimizer = 'sgd'  # can be 'adam' or 'sgd'.
-  h.learning_rate = 0.08  # 0.008 for adam.
-  h.lr_warmup_init = 0.008  # 0.0008 for adam.
+  h.optimizer = 'adam'  # can be 'adam' or 'sgd'.
+  h.learning_rate = 0.001  # 0.008 for adam.
+  h.lr_warmup_init = 0.0001  # 0.0008 for adam.
   h.lr_warmup_epoch = 1.0
-  h.first_lr_drop_epoch = 200.0
-  h.second_lr_drop_epoch = 250.0
+  h.first_lr_drop_epoch = 5.0
+  h.second_lr_drop_epoch = 10.0
   h.poly_lr_power = 0.9
   h.clip_gradients_norm = 10.0
-  h.num_epochs = 300
+  h.num_epochs = 30
+
   h.data_format = 'channels_last'
   # The default image normalization is identical to Cloud TPU ResNet.
   h.mean_rgb = [0.485 * 255, 0.456 * 255, 0.406 * 255]
@@ -240,7 +241,7 @@ def default_detection_configs():
 
   # regularization l2 loss.
   h.weight_decay = 4e-5
-  h.strategy = None  # 'tpu', 'gpus', None
+  h.strategy = 'GPU'  # 'tpu', 'gpus', None
   h.mixed_precision = False  # If False, use float32.
   h.loss_scale = None  # set to 2**16 enables dynamic loss scale
   h.model_optimizations = {}  # 'prune':{}
@@ -258,7 +259,7 @@ def default_detection_configs():
   # For post-processing nms, must be a dict.
   h.nms_configs = {
       'method': 'gaussian',
-      'iou_thresh': None,  # use the default value based on method.
+      'iou_thresh': 0.5,  # use the default value based on method.
       'score_thresh': 0.,
       'sigma': None,
       'pyfunc': False,
@@ -268,7 +269,7 @@ def default_detection_configs():
   h.tflite_max_detections = 100
 
   # version.
-  h.fpn_name = None
+  h.fpn_name = 'bifpn'
   h.fpn_weight_method = None
   h.fpn_config = None
 
@@ -282,8 +283,13 @@ def default_detection_configs():
   # If true, skip loading pretrained weights if shape mismatches.
   h.skip_mismatch = True
 
-  h.backbone_name = 'efficientnet-b1'
-  h.backbone_config = None
+  h.backbone_name = 'efficientnetv2-s'
+  h.backbone_config = {
+    'include_top': False,
+    'pretrained': True,
+    'with_endpoints': True,
+    'pretrained_path': pathlib.Path(r'C:\Users\prans\Python files\Kaggle Competitions\Covid_19_object_detection\checkpoints\train\efficientNetV2-s\512px'),
+  }
   h.var_freeze_expr = None
 
   # A temporary flag to switch between legacy and keras models.
@@ -387,6 +393,17 @@ efficientdet_model_param_dict = {
             max_level=8,
             fpn_weight_method='sum',  # Use unweighted sum for stability.
         ),
+    'efficientdetv2-s':
+    dict(
+        name='efficientdetv2-s',
+        backbone_name='efficientnetv2-s',
+        image_size=512,
+        fpn_num_filters=64,
+        fpn_cell_repeats=3,
+        box_class_repeats=3,
+        anchor_scale=4.0,
+        max_level=7,
+    ),
 }
 
 

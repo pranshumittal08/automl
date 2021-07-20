@@ -23,7 +23,7 @@ import tensorflow_datasets as tfds
 
 import effnetv2_model
 import preprocessing
-import utils
+import effnetv2_utils
 
 FLAGS = flags.FLAGS
 
@@ -76,7 +76,7 @@ def tf2_eval_dataset():
     return model(x)
 
   top1_acc = tf.keras.metrics.Accuracy()
-  pbar = tf.keras.utils.Progbar(None)
+  pbar = tf.keras.effnetv2_utils.Progbar(None)
   data = tfds.load('imagenet2012', split='validation')
   ds = data.map(preprocess_fn).batch(FLAGS.batch_size)
   for i, batch in enumerate(ds.prefetch(tf.data.experimental.AUTOTUNE)):
@@ -166,7 +166,7 @@ def tf1_export_ema_ckpt():
       ckpt_path = FLAGS.model_dir
 
     ema = tf1.train.ExponentialMovingAverage(decay=0.0)
-    ema_vars = utils.get_ema_vars()
+    ema_vars = effnetv2_utils.get_ema_vars()
     var_dict = ema.variables_to_restore(ema_vars)
     ema_assign_op = ema.apply(ema_vars)
 

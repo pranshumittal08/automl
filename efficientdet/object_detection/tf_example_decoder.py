@@ -44,8 +44,8 @@ class TfExampleDecoder(object):
         'image/object/bbox/ymax': tf.VarLenFeature(tf.float32),
         'image/object/class/label': tf.VarLenFeature(tf.int64),
         'image/object/area': tf.VarLenFeature(tf.float32),
-        'image/object/is_crowd': tf.VarLenFeature(tf.int64),
-    }
+
+    }         # 'image/object/is_crowd': tf.VarLenFeature(tf.int64),
     if include_mask:
       self._keys_to_features.update({
           'image/object/mask':
@@ -139,10 +139,10 @@ class TfExampleDecoder(object):
     parsed_tensors['image/width'] = tf.where(decode_image_shape, image_shape[1],
                                              parsed_tensors['image/width'])
 
-    is_crowds = tf.cond(
-        tf.greater(tf.shape(parsed_tensors['image/object/is_crowd'])[0], 0),
-        lambda: tf.cast(parsed_tensors['image/object/is_crowd'], dtype=tf.bool),
-        lambda: tf.zeros_like(parsed_tensors['image/object/class/label'], dtype=tf.bool))  # pylint: disable=line-too-long
+    # is_crowds = tf.cond(
+    #     tf.greater(tf.shape(parsed_tensors['image/object/is_crowd'])[0], 0),
+    #     lambda: tf.cast(parsed_tensors['image/object/is_crowd'], dtype=tf.bool),
+    #     lambda: tf.zeros_like(parsed_tensors['image/object/class/label'], dtype=tf.bool))  # pylint: disable=line-too-long
     if self._regenerate_source_id:
       source_id = _get_source_id_from_encoded_image(parsed_tensors)
     else:
@@ -159,10 +159,9 @@ class TfExampleDecoder(object):
         'height': parsed_tensors['image/height'],
         'width': parsed_tensors['image/width'],
         'groundtruth_classes': parsed_tensors['image/object/class/label'],
-        'groundtruth_is_crowd': is_crowds,
         'groundtruth_area': areas,
         'groundtruth_boxes': boxes,
-    }
+    } # 'groundtruth_no_class': no_classes,
     if self._include_mask:
       decoded_tensors.update({
           'groundtruth_instance_masks': masks,

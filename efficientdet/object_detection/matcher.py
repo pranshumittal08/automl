@@ -189,6 +189,7 @@ class Match(object):
     """
     input_tensor = tf.concat([tf.stack([ignored_value, unmatched_value]),
                               input_tensor], axis=0)
+    # Likely to be changed to argmax                          
     gather_indices = tf.maximum(self.match_results + 2, 0)
     gathered_tensor = tf.gather(input_tensor, gather_indices)
     return gathered_tensor

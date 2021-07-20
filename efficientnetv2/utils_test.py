@@ -12,23 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for utils."""
+"""Tests for effnetv2_utils."""
 
 import tensorflow as tf
-import utils
+import effnetv2_utils
 
 
 class UtilsTest(tf.test.TestCase):
 
   def test_constant_lr(self):
-    constant_schedule = utils.WarmupLearningRateSchedule(
+    constant_schedule = effnetv2_utils.WarmupLearningRateSchedule(
         1.0, lr_decay_type='constant', warmup_epochs=None)
 
     lr = constant_schedule(10)
     self.assertAllClose(lr, 1.0)
 
   def test_linear_lr(self):
-    linear_schedule = utils.WarmupLearningRateSchedule(
+    linear_schedule = effnetv2_utils.WarmupLearningRateSchedule(
         1.0, total_steps=10, lr_decay_type='linear', warmup_epochs=None)
 
     lr = linear_schedule(0)
@@ -41,7 +41,7 @@ class UtilsTest(tf.test.TestCase):
     self.assertAllClose(lr, 0.0)
 
   def test_cosine_lr(self):
-    cosine_schedule = utils.WarmupLearningRateSchedule(
+    cosine_schedule = effnetv2_utils.WarmupLearningRateSchedule(
         1.0, total_steps=10, lr_decay_type='cosine', warmup_epochs=None)
 
     lr = cosine_schedule(4)
@@ -54,7 +54,7 @@ class UtilsTest(tf.test.TestCase):
     self.assertAllClose(lr, 0.345491)
 
   def test_exponential_lr(self):
-    exponential_schedule = utils.WarmupLearningRateSchedule(
+    exponential_schedule = effnetv2_utils.WarmupLearningRateSchedule(
         1.0,
         total_steps=100,
         steps_per_epoch=10,
@@ -73,7 +73,7 @@ class UtilsTest(tf.test.TestCase):
     self.assertAllClose(lr, 0.125)
 
   def test_warmup(self):
-    warmup_schedule = utils.WarmupLearningRateSchedule(
+    warmup_schedule = effnetv2_utils.WarmupLearningRateSchedule(
         1.0,
         total_steps=100,
         steps_per_epoch=10,

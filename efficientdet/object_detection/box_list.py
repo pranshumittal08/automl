@@ -61,6 +61,7 @@ class BoxList(object):
     Returns:
       a tensor representing the number of boxes held in the collection.
     """
+    
     return tf.shape(self.data['boxes'])[0]
 
   def num_boxes_static(self):

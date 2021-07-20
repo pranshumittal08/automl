@@ -1,17 +1,3 @@
-# Copyright 2020 Google Research. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
 """Data loader and processing."""
 from absl import logging
 import tensorflow as tf
@@ -20,8 +6,7 @@ import utils
 from keras import anchors
 from object_detection import preprocessor
 from object_detection import tf_example_decoder
-
-
+from joblib import Parallel, delayed
 class InputProcessor:
   """Base class of Input processor."""
 
@@ -71,7 +56,7 @@ class InputProcessor:
     """Set the parameters for multiscale training.
 
     Notably, if train and eval use different sizes, then target_size should be
-    set as eval size to avoid the discrency between train and eval.
+    set as eval size to avoid the discrepency between train and eval.
 
     Args:
       scale_min: minimal scale factor.
@@ -140,7 +125,6 @@ class InputProcessor:
                                                 self._output_size[1])
     self._image = tf.cast(output_image, dtype)
     return self._image
-
 
 class DetectionInputProcessor(InputProcessor):
   """Input processor for object detection."""
@@ -223,13 +207,16 @@ def pad_to_fixed_size(data, pad_value, output_shape):
   dimension = output_shape[1]
   data = tf.reshape(data, [-1, dimension])
   num_instances = tf.shape(data)[0]
+
   msg = 'ERROR: please increase config.max_instances_per_image'
-  with tf.control_dependencies(
-      [tf.assert_less(num_instances, max_instances_per_image, message=msg)]):
-    pad_length = max_instances_per_image - num_instances
+  # with tf.control_dependencies(
+  #     [tf.assert_less(num_instances, max_instances_per_image, message=msg)]):
+  pad_length = max_instances_per_image - num_instances
   paddings = pad_value * tf.ones([pad_length, dimension])
+
   padded_data = tf.concat([data, paddings], axis=0)
   padded_data = tf.reshape(padded_data, output_shape)
+ 
   return padded_data
 
 
@@ -245,8 +232,7 @@ class InputReader:
     self._file_pattern = file_pattern
     self._is_training = is_training
     self._use_fake_data = use_fake_data
-    # COCO has 100 limit, but users may set different values for custom dataset.
-    self._max_instances_per_image = max_instances_per_image or 100
+    self._max_instances_per_image = max_instances_per_image or 20
     self._debug = debug
 
   @tf.autograph.experimental.do_not_convert
@@ -278,9 +264,11 @@ class InputReader:
       boxes: Groundtruth bounding box annotations. The box is represented in
         [y1, x1, y2, x2] format. The tensor is padded with -1 to the fixed
         dimension [self._max_instances_per_image, 4].
-      no_classes: Groundtruth annotations to indicate if an annotation
+      is_crowd: Groundtruth annotations to indicate if an annotation
         represents a group of instances by value {0, 1}. The tensor is
         padded with 0 to the fixed dimension [self._max_instances_per_image].
+      areas: Groundtruth areas annotations. The tensor is padded with -1
+        to the fixed dimension [self._max_instances_per_image].
       classes: Groundtruth classes annotations. The tensor is padded with -1
         to the fixed dimension [self._max_instances_per_image].
     """
@@ -291,17 +279,16 @@ class InputReader:
       boxes = data['groundtruth_boxes']
       classes = data['groundtruth_classes']
       classes = tf.reshape(tf.cast(classes, dtype=tf.float32), [-1, 1])
+      # is_crowd = data['groundtruth_is_crowd']
       areas = data['groundtruth_area']
-      is_crowds = data['groundtruth_is_crowd']
-      image_masks = data.get('groundtruth_instance_masks', [])
-      classes = tf.reshape(tf.cast(classes, dtype=tf.float32), [-1, 1])
+      
 
       if self._is_training:
         # Training time preprocessing.
-        if params['skip_crowd_during_training']:
-          indices = tf.where(tf.logical_not(data['groundtruth_is_crowd']))
-          classes = tf.gather_nd(classes, indices)
-          boxes = tf.gather_nd(boxes, indices)
+        # if params['skip_crowd_during_training']:
+        #   indices = tf.where(tf.logical_not(data['groundtruth_is_crowd']))
+        #   classes = tf.gather_nd(classes, indices)
+        #   boxes = tf.gather_nd(boxes, indices)
 
         if params.get('grid_mask', None):
           from aug import gridmask  # pylint: disable=g-import-not-at-top
@@ -323,18 +310,20 @@ class InputReader:
         if params['input_rand_hflip']:
           input_processor.random_horizontal_flip()
 
-        input_processor.set_training_random_scale_factors(
-            params['jitter_min'], params['jitter_max'],
-            params.get('target_size', None))
-      else:
-        input_processor.set_scale_factors_to_output_size()
+        # input_processor.set_training_random_scale_factors(
+        #     params['jitter_min'], params['jitter_max'],
+        #     params.get('target_size', None))
+      input_processor.set_scale_factors_to_output_size()
+      
       image = input_processor.resize_and_crop_image()
+      
       boxes, classes = input_processor.resize_and_crop_boxes()
-
+      
       # Assign anchors.
       (cls_targets, box_targets,
        num_positives) = anchor_labeler.label_anchors(boxes, classes)
 
+    
       source_id = tf.where(
           tf.equal(source_id, tf.constant('')), '-1', source_id)
       source_id = tf.strings.to_number(source_id)
@@ -342,10 +331,10 @@ class InputReader:
       # Pad groundtruth data for evaluation.
       image_scale = input_processor.image_scale_to_original
       boxes *= image_scale
-      is_crowds = tf.cast(is_crowds, dtype=tf.float32)
+      # is_crowd = tf.cast(is_crowd, dtype=tf.float32)
       boxes = pad_to_fixed_size(boxes, -1, [self._max_instances_per_image, 4])
-      is_crowds = pad_to_fixed_size(is_crowds, 0,
-                                    [self._max_instances_per_image, 1])
+      # is_crowd = pad_to_fixed_size(is_crowd, 0,
+      #                               [self._max_instances_per_image, 1])
       areas = pad_to_fixed_size(areas, -1, [self._max_instances_per_image, 1])
       classes = pad_to_fixed_size(classes, -1,
                                   [self._max_instances_per_image, 1])
@@ -356,13 +345,14 @@ class InputReader:
         image = tf.cast(image, dtype=dtype)
         box_targets = tf.nest.map_structure(
             lambda box_target: tf.cast(box_target, dtype=dtype), box_targets)
-      return (image, cls_targets, box_targets, num_positives, source_id,
-              image_scale, boxes, is_crowds, areas, classes, image_masks)
+
+      return (image, cls_targets, box_targets, num_positives, source_id, 
+              image_scale, boxes, areas, classes)
 
   @tf.autograph.experimental.do_not_convert
   def process_example(self, params, batch_size, images, cls_targets,
                       box_targets, num_positives, source_ids, image_scales,
-                      boxes, is_crowds, areas, classes, image_masks):
+                      boxes, areas, classes):
     """Processes one batch of data."""
     labels = {}
     # Count num_positives in a batch.
@@ -376,19 +366,18 @@ class InputReader:
       images = tf.transpose(images, [0, 3, 1, 2])
 
     for level in range(params['min_level'], params['max_level'] + 1):
-      labels['cls_targets_%d' % level] = cls_targets[level]
       labels['box_targets_%d' % level] = box_targets[level]
+      labels['cls_targets_%d' % level] = cls_targets[level]
       if params['data_format'] == 'channels_first':
         labels['cls_targets_%d' % level] = tf.transpose(
             labels['cls_targets_%d' % level], [0, 3, 1, 2])
         labels['box_targets_%d' % level] = tf.transpose(
             labels['box_targets_%d' % level], [0, 3, 1, 2])
     # Concatenate groundtruth annotations to a tensor.
-    groundtruth_data = tf.concat([boxes, is_crowds, areas, classes], axis=2)
+    groundtruth_data = tf.concat([boxes, areas, classes], axis=2)
     labels['source_ids'] = source_ids
     labels['groundtruth_data'] = groundtruth_data
     labels['image_scales'] = image_scales
-    labels['image_masks'] = image_masks
     return images, labels
 
   @property
@@ -398,6 +387,7 @@ class InputReader:
     options.experimental_optimization.map_parallelization = True
     options.experimental_optimization.parallel_batch = True
     return options
+
 
   def __call__(self, params, input_context=None, batch_size=None):
     input_anchors = anchors.Anchors(params['min_level'], params['max_level'],
@@ -434,19 +424,31 @@ class InputReader:
 
     # Parse the fetched records to input tensors for model function.
     # pylint: disable=g-long-lambda
-    if params.get('dataset_type', None) == 'sstable':
-      map_fn = lambda key, value: self.dataset_parser(value, example_decoder,
-                                                      anchor_labeler, params)
-    else:
-      map_fn = lambda value: self.dataset_parser(value, example_decoder,
-                                                 anchor_labeler, params)
+ 
+    # map_fn = lambda value: self.dataset_parser(value, example_decoder, anchor_labeler, params)
     # pylint: enable=g-long-lambda
-    dataset = dataset.map(
-        map_fn, num_parallel_calls=tf.data.AUTOTUNE)
+    # mapped_values = Parallel(10, 'threading')(delayed(map_fn)(value) for value in dataset.as_numpy_iterator())
+    # mapped_values = []
+    # for value in dataset.as_numpy_iterator():
+    #   mapped_values.append(map_fn(value))
+    # dataset = tf.data.Dataset.from_tensor_slices(mapped_values)
+    print(self.dataset_parser)
+    def map_fn(value):
+      return self.dataset_parser(value, example_decoder, anchor_labeler, params)
+    # image, cls_targets, box_targets, num_positives, source_id, 
+    #           image_scale, boxes, areas, classes
+    # dataset = dataset.map(lambda value: tf.py_function(map_fn, inp = [value], Tout = [tf.float32, tf.int32, tf.float32, tf.float32, tf.string, tf.float32, tf.float32, tf.float32, tf.float32]), num_parallel_calls=tf.data.AUTOTUNE)
+    # sample_value = next(dataset.as_numpy_iterator())
+    # return map_fn(sample_value)
+  
+    # dataset = dataset.map(lambda value: tf.py_function(func = map_fn, inp = [value], Tout = [tf.float32, tf.int32, tf.float32,  tf.float32, tf.string, tf.float32, tf.float32, tf.float32, tf.float32]), tf.data.AUTOTUNE)
+
+    dataset = dataset.map(lambda value: self.dataset_parser(value, example_decoder, anchor_labeler, params), num_parallel_calls = tf.data.AUTOTUNE)
     dataset = dataset.prefetch(batch_size)
     dataset = dataset.batch(batch_size, drop_remainder=params['drop_remainder'])
     dataset = dataset.map(
         lambda *args: self.process_example(params, batch_size, *args))
+    
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     if self._is_training:
       dataset = dataset.repeat()

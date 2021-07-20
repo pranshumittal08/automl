@@ -1,4 +1,4 @@
-# Copyright 2020 Google Research. All Rights Reserved.
+# Copyright 2020 Google Reearch. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -234,9 +234,8 @@ class AnchorLabeler(object):
     anchor_box_list = box_list.BoxList(self._anchors.boxes)
 
     # cls_weights, box_weights are not used
-    cls_targets, _, box_targets, _, matches = self._target_assigner.assign(
+    cls_targets,  box_targets, matches = self._target_assigner.assign(
         anchor_box_list, gt_box_list, gt_labels)
-
     # class labels start from 1 and the background class = -1
     cls_targets -= 1
     cls_targets = tf.cast(cls_targets, tf.int32)
@@ -246,5 +245,4 @@ class AnchorLabeler(object):
     box_targets_dict = self._unpack_labels(box_targets)
     num_positives = tf.reduce_sum(
         tf.cast(tf.not_equal(matches.match_results, -1), tf.float32))
-
     return cls_targets_dict, box_targets_dict, num_positives

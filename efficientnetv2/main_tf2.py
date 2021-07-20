@@ -29,7 +29,7 @@ import datasets
 import effnetv2_configs
 import effnetv2_model
 import hparams
-import utils
+import effnetv2_utils
 FLAGS = flags.FLAGS
 
 

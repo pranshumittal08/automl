@@ -24,6 +24,7 @@
 """
 import copy
 import itertools
+from logging import raiseExceptions
 import math
 
 from absl import logging
@@ -34,7 +35,7 @@ import tensorflow as tf
 
 import effnetv2_configs
 import hparams
-import utils
+import effnetv2_utils
 
 
 def conv_kernel_initializer(shape, dtype=None, partition_info=None):
@@ -111,7 +112,7 @@ class SE(tf.keras.layers.Layer):
 
     self._local_pooling = mconfig.local_pooling
     self._data_format = mconfig.data_format
-    self._act = utils.get_act_fn(mconfig.act_fn)
+    self._act = effnetv2_utils.get_act_fn(mconfig.act_fn)
 
     # Squeeze and Excitation layer.
     self._se_reduce = tf.keras.layers.Conv2D(
@@ -171,7 +172,7 @@ class MBConvBlock(tf.keras.layers.Layer):
     self._data_format = mconfig.data_format
     self._channel_axis = 1 if self._data_format == 'channels_first' else -1
 
-    self._act = utils.get_act_fn(mconfig.act_fn)
+    self._act = effnetv2_utils.get_act_fn(mconfig.act_fn)
     self._has_se = (
         self._block_args.se_ratio is not None and
         0 < self._block_args.se_ratio <= 1)
@@ -212,7 +213,7 @@ class MBConvBlock(tf.keras.layers.Layer):
           data_format=self._data_format,
           use_bias=False,
           name=get_conv_name())
-      self._norm0 = utils.normalization(
+      self._norm0 = effnetv2_utils.normalization(
           mconfig.bn_type,
           axis=self._channel_axis,
           momentum=mconfig.bn_momentum,
@@ -230,7 +231,7 @@ class MBConvBlock(tf.keras.layers.Layer):
         use_bias=False,
         name='depthwise_conv2d')
 
-    self._norm1 = utils.normalization(
+    self._norm1 = effnetv2_utils.normalization(
         mconfig.bn_type,
         axis=self._channel_axis,
         momentum=mconfig.bn_momentum,
@@ -256,7 +257,7 @@ class MBConvBlock(tf.keras.layers.Layer):
         data_format=self._data_format,
         use_bias=False,
         name=get_conv_name())
-    self._norm2 = utils.normalization(
+    self._norm2 = effnetv2_utils.normalization(
         mconfig.bn_type,
         axis=self._channel_axis,
         momentum=mconfig.bn_momentum,
@@ -269,7 +270,7 @@ class MBConvBlock(tf.keras.layers.Layer):
         self._block_args.input_filters == self._block_args.output_filters):
       # Apply only if skip connection presents.
       if survival_prob:
-        x = utils.drop_connect(x, training, survival_prob)
+        x = effnetv2_utils.drop_connect(x, training, survival_prob)
       x = tf.add(x, inputs)
 
     return x
@@ -339,7 +340,7 @@ class FusedMBConvBlock(MBConvBlock):
           padding='same',
           use_bias=False,
           name=get_conv_name())
-      self._norm0 = utils.normalization(
+      self._norm0 = effnetv2_utils.normalization(
           mconfig.bn_type,
           axis=self._channel_axis,
           momentum=mconfig.bn_momentum,
@@ -363,7 +364,7 @@ class FusedMBConvBlock(MBConvBlock):
         padding='same',
         use_bias=False,
         name=get_conv_name())
-    self._norm1 = utils.normalization(
+    self._norm1 = effnetv2_utils.normalization(
         mconfig.bn_type,
         axis=self._channel_axis,
         momentum=mconfig.bn_momentum,
@@ -419,13 +420,13 @@ class Stem(tf.keras.layers.Layer):
         data_format=mconfig.data_format,
         use_bias=False,
         name='conv2d')
-    self._norm = utils.normalization(
+    self._norm = effnetv2_utils.normalization(
         mconfig.bn_type,
         axis=(1 if mconfig.data_format == 'channels_first' else -1),
         momentum=mconfig.bn_momentum,
         epsilon=mconfig.bn_epsilon,
         groups=mconfig.gn_groups)
-    self._act = utils.get_act_fn(mconfig.act_fn)
+    self._act = effnetv2_utils.get_act_fn(mconfig.act_fn)
 
   def call(self, inputs, training):
     return self._act(self._norm(self._conv_stem(inputs), training=training))
@@ -449,13 +450,13 @@ class Head(tf.keras.layers.Layer):
         data_format=mconfig.data_format,
         use_bias=False,
         name='conv2d')
-    self._norm = utils.normalization(
+    self._norm = effnetv2_utils.normalization(
         mconfig.bn_type,
         axis=(1 if mconfig.data_format == 'channels_first' else -1),
         momentum=mconfig.bn_momentum,
         epsilon=mconfig.bn_epsilon,
         groups=mconfig.gn_groups)
-    self._act = utils.get_act_fn(mconfig.act_fn)
+    self._act = effnetv2_utils.get_act_fn(mconfig.act_fn)
 
     self._avg_pooling = tf.keras.layers.GlobalAveragePooling2D(
         data_format=mconfig.data_format)
@@ -468,7 +469,7 @@ class Head(tf.keras.layers.Layer):
     self.h_axis, self.w_axis = ([2, 3] if mconfig.data_format
                                 == 'channels_first' else [1, 2])
 
-  def call(self, inputs, training):
+  def call(self, inputs, training, pooled_features_only):
     """Call the layer."""
     outputs = self._act(self._norm(self._conv_head(inputs), training=training))
     self.endpoints['head_1x1'] = outputs
@@ -479,19 +480,21 @@ class Head(tf.keras.layers.Layer):
       outputs = tf.nn.avg_pool(
           outputs, ksize=kernel_size, strides=[1, 1, 1, 1], padding='VALID')
       self.endpoints['pooled_features'] = outputs
-      if self._dropout:
-        outputs = self._dropout(outputs, training=training)
-      self.endpoints['global_pool'] = outputs
-      if self._fc:
-        outputs = tf.squeeze(outputs, [self.h_axis, self.w_axis])
-        outputs = self._fc(outputs)
-      self.endpoints['head'] = outputs
+      if not pooled_features_only:
+        if self._dropout:
+          outputs = self._dropout(outputs, training=training)
+        self.endpoints['global_pool'] = outputs
+        if self._fc:
+          outputs = tf.squeeze(outputs, [self.h_axis, self.w_axis])
+          outputs = self._fc(outputs)
+        self.endpoints['head'] = outputs
     else:
       outputs = self._avg_pooling(outputs)
       self.endpoints['pooled_features'] = outputs
-      if self._dropout:
-        outputs = self._dropout(outputs, training=training)
-      self.endpoints['head'] = outputs
+      if not pooled_features_only:
+        if self._dropout:
+          outputs = self._dropout(outputs, training=training)
+        self.endpoints['head'] = outputs
     return outputs
 
 
@@ -586,7 +589,7 @@ class EffNetV2Model(tf.keras.Model):
         inputs=[inputs], outputs=self.call(inputs, training=True))
     return model
 
-  def call(self, inputs, training, with_endpoints=False):
+  def call(self, inputs, training, with_endpoints=True, features_only = None, pooled_features_only = False):
     """Implementation of call().
 
     Args:
@@ -630,14 +633,16 @@ class EffNetV2Model(tf.keras.Model):
             self.endpoints['reduction_%s/%s' % (reduction_idx, k)] = v
     self.endpoints['features'] = outputs
 
-    # Head to obtain the final feature.
-    outputs = self._head(outputs, training)
-    self.endpoints.update(self._head.endpoints)
+    if not features_only:
 
-    # Calls final dense layers and returns logits.
-    if self._fc:
-      with tf.name_scope('head'):  # legacy
-        outputs = self._fc(outputs)
+      # Head to obtain the final feature.
+      outputs = self._head(outputs, training, pooled_features_only)
+      self.endpoints.update(self._head.endpoints)
+
+      # Calls final dense layers and returns logits.
+      if self._fc:
+        with tf.name_scope('head'):  # legacy
+          outputs = self._fc(outputs)
 
     if with_endpoints:  # Use for building sequential models.
       return [outputs] + list(
@@ -654,10 +659,14 @@ class EffNetV2Model(tf.keras.Model):
 
 def get_model(model_name,
               model_config=None,
-              include_top=True,
+              include_top=False,
               pretrained=True,
               training=True,
-              with_endpoints=False,
+              with_endpoints=True,
+              weights = None,
+              pretrained_path = None,
+              features_only = None,
+              pooled_features_only = False,
               **kwargs):
   """Get a EfficientNet V1 or V2 model instance.
 
@@ -675,10 +684,13 @@ def get_model(model_name,
   Returns:
     A single tensor if with_endpoints if False; otherwise, a list of tensor.
   """
-  net = EffNetV2Model(model_name, model_config, include_top, **kwargs)
-  net(tf.keras.Input(shape=(None, None, 3)),
+  net = EffNetV2Model(model_name, model_config, include_top,
+  **kwargs)
+  outputs = net(tf.keras.Input(shape=(None, None, 3)),
       training=training,
-      with_endpoints=with_endpoints)
+      with_endpoints=with_endpoints,
+      features_only = features_only, 
+      pooled_features_only = pooled_features_only)
   if pretrained is True:  # pylint: disable=g-bool-id-comparison
     # pylint: disable=line-too-long
     # download checkpoint and set pretrained path. Supported models include:
@@ -690,16 +702,21 @@ def get_model(model_name,
     # v2: https://github.com/google/automl/tree/master/efficientnetv2
     # v1: https://github.com/tensorflow/tpu/tree/master/models/official/efficientnet
     # pylint: enable=line-too-long
-
-    url = ('https://storage.googleapis.com/cloud-tpu-checkpoints/'
-           f'efficientnet/v2/{model_name}.tgz')
-    pretrained_ckpt = tf.keras.utils.get_file(model_name, url, untar=True)
-  else:
-    pretrained_ckpt = pretrained
-
-  if pretrained_ckpt:
-    if tf.io.gfile.isdir(pretrained_ckpt):
-      pretrained_ckpt = tf.train.latest_checkpoint(pretrained_ckpt)
-    net.load_weights(pretrained_ckpt)
-
-  return net
+    if weights == 'imagenet':
+      url = ('https://storage.googleapis.com/cloud-tpu-checkpoints/'
+            f'efficientnet/v2/{model_name}.tgz')
+      pretrained_ckpt = tf.keras.effnetv2_utils.get_file(model_name, url, untar=True)
+      if tf.io.gfile.isdir(pretrained_ckpt):
+        pretrained_ckpt = tf.train.latest_checkpoint(pretrained_ckpt)
+        net.load_weights(pretrained_ckpt)
+        return net
+      else:
+        raise NotADirectoryError('There is not directory containing the pretrained cehckpoints.\n')
+    else:
+      pretrained_ckpt = pretrained_path
+      if tf.io.gfile.exists(pretrained_ckpt):
+        pretrained_model = tf.keras.models.load_model(pretrained_ckpt)
+        net.set_weights(pretrained_model.layers[0].get_weights())
+        return net
+      else:
+        raise NotImplementedError('There is no model present at this path.\n')

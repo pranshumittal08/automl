@@ -27,7 +27,7 @@ import datasets
 import effnetv2_configs
 import effnetv2_model
 import hparams
-import utils
+import effnetv2_utils
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('model_name', 'efficientnetv2-b0', 'model name.')
@@ -68,7 +68,7 @@ def model_fn(features, labels, mode, params):
   labels = labels['label'] if isinstance(labels, dict) else labels
   config = params['config']
   image_size = params['image_size']
-  utils.scalar('model/resolution', image_size)
+  effnetv2_utils.scalar('model/resolution', image_size)
 
   if config.model.data_format == 'channels_first':
     images = tf.transpose(images, [0, 3, 1, 2])
@@ -87,22 +87,22 @@ def model_fn(features, labels, mode, params):
     logits = model(in_images, training=is_training)
     return logits
 
-  pre_num_params, pre_num_flops = utils.num_params_flops(readable_format=True)
+  pre_num_params, pre_num_flops = effnetv2_utils.num_params_flops(readable_format=True)
 
   if config.runtime.mixed_precision:
     precision = 'mixed_bfloat16' if FLAGS.use_tpu else 'mixed_float16'
-    logits = utils.build_model_with_precision(precision, build_model, images,
+    logits = effnetv2_utils.build_model_with_precision(precision, build_model, images,
                                               is_training)
     logits = tf.cast(logits, tf.float32)
   else:
     logits = build_model(images)
 
-  num_params, num_flops = utils.num_params_flops(readable_format=True)
+  num_params, num_flops = effnetv2_utils.num_params_flops(readable_format=True)
   num_params = num_params - pre_num_params
   num_flops = (num_flops - pre_num_flops) / params['batch_size']
   logging.info('backbone params/flops = %.4f M / %.4f B', num_params, num_flops)
-  utils.scalar('model/params', num_params)
-  utils.scalar('model/flops', num_flops)
+  effnetv2_utils.scalar('model/params', num_params)
+  effnetv2_utils.scalar('model/flops', num_flops)
 
   # Calculate loss, which includes softmax cross entropy and L2 regularization.
   if config.train.loss_type == 'sigmoid':
@@ -129,7 +129,7 @@ def model_fn(features, labels, mode, params):
   weight_decay_inc = config.train.weight_decay_inc * (
       tf.cast(global_step, tf.float32) / tf.cast(train_steps, tf.float32))
   weight_decay = (1 + weight_decay_inc) * config.train.weight_decay
-  utils.scalar('train/weight_decay', weight_decay)
+  effnetv2_utils.scalar('train/weight_decay', weight_decay)
   # Add weight decay to the loss for non-batch-normalization variables.
   matcher = re.compile(config.train.weight_decay_exclude)
   l2loss = weight_decay * tf.add_n([
@@ -138,13 +138,13 @@ def model_fn(features, labels, mode, params):
       if not matcher.match(v.name)
   ])
   loss = cross_entropy + l2loss
-  utils.scalar('loss/l2reg', l2loss)
-  utils.scalar('loss/xent', cross_entropy)
+  effnetv2_utils.scalar('loss/l2reg', l2loss)
+  effnetv2_utils.scalar('loss/xent', cross_entropy)
 
   if has_moving_average_decay:
     ema = tf.train.ExponentialMovingAverage(
         decay=config.train.ema_decay, num_updates=global_step)
-    ema_vars = utils.get_ema_vars()
+    ema_vars = effnetv2_utils.get_ema_vars()
 
   host_call = None
   restore_vars_dict = None
@@ -152,11 +152,11 @@ def model_fn(features, labels, mode, params):
     # Compute the current epoch and associated learning rate from global_step.
     current_epoch = (
         tf.cast(global_step, tf.float32) / params['steps_per_epoch'])
-    utils.scalar('train/epoch', current_epoch)
+    effnetv2_utils.scalar('train/epoch', current_epoch)
 
     scaled_lr = config.train.lr_base * (config.train.batch_size / 256.0)
     scaled_lr_min = config.train.lr_min * (config.train.batch_size / 256.0)
-    learning_rate = utils.WarmupLearningRateSchedule(
+    learning_rate = effnetv2_utils.WarmupLearningRateSchedule(
         scaled_lr,
         steps_per_epoch=params['steps_per_epoch'],
         decay_epochs=config.train.lr_decay_epoch,
@@ -165,8 +165,8 @@ def model_fn(features, labels, mode, params):
         lr_decay_type=config.train.lr_sched,
         total_steps=train_steps,
         minimal_lr=scaled_lr_min)(global_step)
-    utils.scalar('train/lr', learning_rate)
-    optimizer = utils.build_optimizer(
+    effnetv2_utils.scalar('train/lr', learning_rate)
+    optimizer = effnetv2_utils.build_optimizer(
         learning_rate, optimizer_name=config.train.optimizer)
     if FLAGS.use_tpu:
       # When using TPU, wrap the optimizer with CrossShardOptimizer which
@@ -193,8 +193,8 @@ def model_fn(features, labels, mode, params):
       with tf.name_scope('gclip'):
         grads = [gv[0] for gv in grads_and_vars]
         tvars = [gv[1] for gv in grads_and_vars]
-        utils.scalar('train/gnorm', tf.linalg.global_norm(grads))
-        utils.scalar('train/gnormmax',
+        effnetv2_utils.scalar('train/gnorm', tf.linalg.global_norm(grads))
+        effnetv2_utils.scalar('train/gnormmax',
                      tf.math.reduce_max([tf.norm(g) for g in grads]))
         # First clip each variable's norm, then clip global norm.
         clip_norm = abs(config.train.gclip)
@@ -216,7 +216,7 @@ def model_fn(features, labels, mode, params):
         train_op = ema.apply(ema_vars)
 
     if not config.runtime.skip_host_call:
-      host_call = utils.get_tpu_host_call(global_step, FLAGS.model_dir,
+      host_call = effnetv2_utils.get_tpu_host_call(global_step, FLAGS.model_dir,
                                           config.runtime.iterations_per_loop)
   else:
     train_op = None
@@ -296,7 +296,7 @@ def model_fn(features, labels, mode, params):
 
     def scaffold_fn():
       logging.info('restore variables from %s', config.train.ft_init_ckpt)
-      var_map = utils.get_ckpt_var_map(
+      var_map = effnetv2_utils.get_ckpt_var_map(
           ckpt_path=config.train.ft_init_ckpt,
           skip_mismatch=True,
           init_ema=config.train.ft_init_ema)
@@ -401,7 +401,7 @@ def main(unused_argv):
         logging.info('Eval results: %s. Elapsed seconds: %d', eval_results,
                      elapsed_time)
         if FLAGS.archive_ckpt:
-          utils.archive_ckpt(eval_results, eval_results['eval/acc_top1'], ckpt)
+          effnetv2_utils.archive_ckpt(eval_results, eval_results['eval/acc_top1'], ckpt)
 
         # Terminate eval job when final checkpoint is reached
         try:

@@ -23,7 +23,7 @@ import re
 from absl import logging
 import numpy as np
 import tensorflow as tf
-
+from efficientnetv2 import effnetv2_model
 import utils
 from backbone import efficientnet_model
 
@@ -42,9 +42,23 @@ def efficientnet_params(model_name):
       'efficientnet-b7': (2.0, 3.1, 600, 0.5),
       'efficientnet-b8': (2.2, 3.6, 672, 0.5),
       'efficientnet-l2': (4.3, 5.3, 800, 0.5),
+
   }
   return params_dict[model_name]
 
+# def efficientnetv2_params(model_name = 'efficientnetv2-s'):
+#   params_dict = {
+#     # (block, width, depth, train_size, eval_size, dropout, randaug, mixup, aug)
+#     'efficientnetv2-s':  # 83.9% @ 22M
+#         (v2_s_block, 1.0, 1.0, 300, 384, 0.2, 10, 0, 'randaug'),
+#     'efficientnetv2-m':  # 85.2% @ 54M
+#         (v2_m_block, 1.0, 1.0, 384, 480, 0.3, 15, 0.2, 'randaug'),
+#     'efficientnetv2-l':  # 85.7% @ 120M
+#         (v2_l_block, 1.0, 1.0, 384, 480, 0.4, 20, 0.5, 'randaug'),
+
+#     'efficientnetv2-xl':
+#         (v2_xl_block, 1.0, 1.0, 384, 512, 0.4, 20, 0.5, 'randaug'),
+#   }
 
 class BlockDecoder(object):
   """Block Decoder for readability."""
@@ -193,9 +207,41 @@ def efficientnet(width_coefficient=None,
       clip_projection_output=False)
   return global_params
 
+# def efficientnetv2(width_coefficient=None,
+#                  depth_coefficient=None,
+#                  dropout_rate=0.4,
+#                  survival_prob=0.8):
+#   """Creates a efficientnet model."""
+#   global_params = efficientnet_model.GlobalParams(
+#       blocks_args=_DEFAULT_BLOCKS_ARGS,
+#       batch_norm_momentum=0.99,
+#       batch_norm_epsilon=1e-3,
+#       dropout_rate=dropout_rate,
+#       survival_prob=survival_prob,
+#       data_format='channels_last',
+#       num_classes=2,
+#       width_coefficient=width_coefficient,
+#       depth_coefficient=depth_coefficient,
+#       depth_divisor=8,
+#       min_depth=None,
+#       relu_fn=tf.nn.swish,
+#       # The default is TPU-specific batch norm.
+#       # The alternative is tf.layers.BatchNormalization.
+#       batch_norm=tf.keras.layers.BatchNormalization,  # TPU-specific requirement.
+#       use_se=True,
+#       clip_projection_output=False)
+#   return global_params
+
 
 def get_model_params(model_name, override_params):
   """Get the block args and global params for a given model."""
+  
+  # if model_name.startswith('efficientnetv2'):
+  #   width_coefficient, depth_coefficient, _, dropout_rate = (
+  #       efficientnet_params(model_name))
+  #   global_params = efficientnet(
+  #       width_coefficient, depth_coefficient, dropout_rate)
+  
   if model_name.startswith('efficientnet'):
     width_coefficient, depth_coefficient, _, dropout_rate = (
         efficientnet_params(model_name))

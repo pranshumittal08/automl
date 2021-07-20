@@ -803,7 +803,19 @@ class EfficientDetNet(tf.keras.Model):
     # Backbone.
     backbone_name = config.backbone_name
     is_training_bn = config.is_training_bn
-    if 'efficientnet' in backbone_name:
+    
+    # EfficientNetV2 Backbone
+    if 'efficientnetv2' in backbone_name:
+      if not config.backbone_config:
+        override_params = {'include_top': False,
+                          'pretrained': True,
+                          }
+      else:
+        override_params = config.backbone_config
+      self.backbone = backbone_factory.get_model(backbone_name, override_params = override_params)
+
+    # EfficientNetV1 Backbone
+    elif 'efficientnet-' in backbone_name:
       override_params = {
           'batch_norm':
               utils.batch_norm_class(is_training_bn, config.strategy),
@@ -820,6 +832,8 @@ class EfficientDetNet(tf.keras.Model):
       override_params['data_format'] = config.data_format
       self.backbone = backbone_factory.get_model(
           backbone_name, override_params=override_params)
+
+
 
     # Feature network.
     self.resample_layers = []  # additional resampling layers.

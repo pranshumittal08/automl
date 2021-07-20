@@ -19,8 +19,14 @@ from absl import app
 from absl import flags
 from absl import logging
 import tensorflow as tf
+# from efficientdet import covid_19_dataloader
+import sys
+sys.path.insert(0, os.getcwd())
+sys.path.append(r'C:\Users\prans\Python files\Kaggle Competitions\Covid_19_object_detection\efficientdetv2\automl\efficientnetv2')
+sys.path.append(r'C:\Users\prans\Python files\Kaggle Competitions\Covid_19_object_detection\efficientdetv2\automl')
+print(sys.path)
 
-import dataloader
+import covid_19_dataloader
 import hparams_config
 import utils
 from keras import tfmot
@@ -134,8 +140,8 @@ def setup_model(model, config):
                   config.gamma,
                   label_smoothing=config.label_smoothing,
                   reduction=tf.keras.losses.Reduction.NONE),
-          tf.keras.losses.SparseCategoricalCrossentropy.__name__:
-              tf.keras.losses.SparseCategoricalCrossentropy(
+          tf.keras.losses.CategoricalCrossentropy.__name__:
+              tf.keras.losses.CategoricalCrossentropy(
                   from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
       })
   return model
@@ -225,7 +231,7 @@ def main(_):
     if not file_pattern:
       raise ValueError('No matching files.')
 
-    return dataloader.InputReader(
+    return covid_19_dataloader.InputReader(
         file_pattern,
         is_training=is_training,
         use_fake_data=FLAGS.use_fake_data,

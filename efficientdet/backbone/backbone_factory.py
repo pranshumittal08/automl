@@ -20,7 +20,7 @@ import tensorflow as tf
 from backbone import efficientnet_builder
 from backbone import efficientnet_lite_builder
 from backbone import efficientnet_model
-
+from efficientnetv2 import effnetv2_model, effnetv2_configs
 
 def get_model_builder(model_name):
   """Get the model_builder module for a given model name."""
@@ -60,12 +60,18 @@ def get_model(model_name, override_params=None, model_dir=None):
     builder = efficientnet_lite_builder
   elif model_name.startswith('efficientnet-'):
     builder = efficientnet_builder
+  elif model_name.startswith('efficientnetv2-'):
+    
+    model =  effnetv2_model.get_model(model_name, 
+    **override_params)
+    return model
+
   else:
     raise ValueError('Unknown model name {}'.format(model_name))
 
-  blocks_args, global_params = builder.get_model_params(model_name,
-                                                        override_params)
+  blocks_args, global_params = builder.get_model_params(model_name, override_params)
 
+  
   if model_dir:
     param_file = os.path.join(model_dir, 'model_params.txt')
     if not tf.io.gfile.exists(param_file):

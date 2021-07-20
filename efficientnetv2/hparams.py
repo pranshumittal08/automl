@@ -275,7 +275,7 @@ base_config = Config(
     ),
     # data related params.
     data=dict(
-        ds_name='imagenet',
+        ds_name='chexpert',
         augname='randaug',  # or 'autoaug'
         ra_num_layers=2,
         ram=15,
@@ -286,7 +286,7 @@ base_config = Config(
         resize=None,
         data_dir=None,
         multiclass=None,
-        num_classes=1000,
+        num_classes=14,
         tfds_name=None,
         try_gcs=False,
         tfds_split=None,

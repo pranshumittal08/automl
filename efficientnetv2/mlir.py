@@ -20,7 +20,7 @@ from absl import logging
 import tensorflow as tf
 
 import effnetv2_model
-import utils
+import effnetv2_utils
 # pylint: disable=g-direct-tensorflow-import
 from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2_as_graph
 from tensorflow.lite.python.util import get_grappler_config
