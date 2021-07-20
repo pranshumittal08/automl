@@ -18,7 +18,7 @@ from absl import logging
 import numpy as np
 import tensorflow as tf
 
-import dataloader
+import covid_19_dataloader
 import hparams_config
 import utils
 from backbone import backbone_factory
@@ -951,7 +951,7 @@ class EfficientDetModel(EfficientDetNet):
       raise ValueError('preprocessing must be infer or empty')
 
     def map_fn(image):
-      input_processor = dataloader.DetectionInputProcessor(
+      input_processor = covid_19_dataloader.DetectionInputProcessor(
           image, image_size)
       input_processor.normalize_image(mean_rgb, stddev_rgb)
       input_processor.set_scale_factors_to_output_size()
